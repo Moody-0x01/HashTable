@@ -1,4 +1,6 @@
 use std::fmt::Display;
+use std::cmp::PartialEq;
+
 pub const CAP: usize = 10;
 
 #[derive(Debug, Clone, Copy)]
@@ -22,7 +24,7 @@ impl<Key: Default + Clone, Value: Default + Clone>Cell<Key, Value> {
 #[derive(Debug, Clone)]
 struct HashTable<Key, Value> { 
     pairs: Vec<Cell<Key, Value>>,
-    cap: usize,
+    cap: usize, // Allocated.
     size: usize,
 }
 
@@ -36,6 +38,7 @@ impl Hashable for String {
     fn hash(&self) -> usize {
         let mut hash: usize = 5381;
 
+
         for c in self.bytes() {
             hash = ((hash << 5).wrapping_add(hash)).wrapping_add(c as usize);
         }
@@ -44,94 +47,142 @@ impl Hashable for String {
     }
 }
 
-impl<Key: Default + Clone + Hashable + Display, Value: Default + Clone + Display> HashTable<Key, Value> {
+impl<Key: Default + Clone + PartialEq + Hashable + Display, Value: Default + Clone + Display> HashTable<Key, Value> {
     fn new() -> Self {
         Self {
-            pairs: vec![Cell::new(); CAP],
-            cap: CAP,
+            pairs: vec![Cell::new(); CAP], // CAP == 10
+            cap: CAP,// 10
+            size: 0, // 0 because ylh drna table.
+        }
+    }
+    
+    fn new_with_cap(cap: usize) -> Self {
+        Self {
+            pairs: vec![Cell::new(); cap],
+            cap: cap,
             size: 0,
         }
     }
-
+    
     fn keys(&mut self) -> Vec<Key> {
         return self.pairs.iter()
             .filter(|cell| cell.taken)
-            .map(|cell| cell.key.clone())
+            .map(|cell| cell.key.clone()) 
             .collect::<Vec<Key>>();
     }
     
     fn values(&mut self) -> Vec<Value> {
-        return self.pairs.iter()
+        // same thing..
+        return self.pairs.iter() 
             .filter(|cell| cell.taken)
             .map(|cell| cell.value.clone())
             .collect::<Vec<Value>>();
     }
     
     fn expand(&mut self) -> bool {
+        let mut new_ = vec![Cell::new(); self.cap + CAP];
         
-        if self.size == self.cap {
-            let mut new_ = vec![Cell::new(); self.cap + CAP];
-            
-            for i in 0..self.cap {
-                new_[i] = self.pairs[i].clone();
-            }
-
-            self.cap = self.cap + CAP;
-            return true;
+        for i in 0..self.cap {
+            new_[i] = self.pairs[i].clone();
         }
-        return false;
+        
+        self.pairs = new_;
+        self.cap = self.cap + CAP;
+        return true;
     }
 
     fn get(&mut self, key: &Key) -> Option<&Value> {
-        let index = key.hash() % CAP;
         
-        if self.pairs[index].taken {
-            return Some(&self.pairs[index].value);
-        }
+        if let Some(cell) = self.get_cell_mut(key) {
+            return  Some(&cell.value); 
+        }        
 
         return None;
     }
 
     
     fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
-        let index = key.hash() % CAP;
-        
-        if self.pairs[index].taken {
-            return Some(&mut self.pairs[index].value);
+        if let Some(cell) = self.get_cell_mut(key) {
+            return Some(&mut cell.value); 
         }
 
         return None;
     }
     
     fn increment_size(&mut self) {
-        self.size = (self.size + 1);
+        self.size = self.size + 1;
     }
 
     fn insert(&mut self, key: Key, value: Value) -> bool {
-        let mut index = key.hash() % CAP;
-    
+        let mut exists: bool = false;
+        let mut index = key.hash() % self.cap;
+         
         while self.pairs[index].taken {
+            
+            if key == self.pairs[index].key {
+                exists = true;
+                break;
+            }
+
             index = index + 1;
         }
 
-        if index == CAP {
+        if index >= self.cap {
             // TODO: Make the table expandable for more elements.
-            return false;
+            self.expand();
+            return self.insert(key, value);
+        }
+        if !exists {
+            // Add the key value pair
+            self.pairs[index].key   = key;
+            self.pairs[index].value = value;
+            self.pairs[index].taken = true;
+            self.increment_size();
+        } else {
+            // Overwrite the value associated with key.
+            match self.get_mut(&key) {
+                Some(mut cell_value) => {
+                    *cell_value = value;
+                },
+                None    => {
+                    return false;
+                }
+            }
         }
         
-        self.pairs[index].key   = key;
-        self.pairs[index].value = value;
-        self.pairs[index].taken = true;
-        self.increment_size();
         return true;
     }
-    
-    fn delete(&mut self) {
-        todo!();
+    fn get_cell_mut(&mut self, key: &Key)  -> Option<&mut Cell<Key, Value>> {
+        let mut index = key.hash() % self.cap;          
+        while *key != self.pairs[index].key && index < self.cap {
+
+            index += 1;
+            if index == self.cap {
+                return None;
+            }
+        }
+       if *key == self.pairs[index].key {
+            return Some(&mut self.pairs[index]);
+        }
+
+        return None;
+    }
+
+    fn delete(&mut self, key: &Key) -> bool {
+        if let Some(mut cell) = self.get_cell_mut(key) {
+            *cell = Cell::new();            
+            return true;    
+        }
+
+        return false;
     }
     
-    fn contains(&mut self, key: Key) {
-        todo!();
+    fn contains(&mut self, key: Key) -> bool{
+        if let Some(val) = self.get(&key) {
+            return true;
+        }
+
+        return false;
     }
     
     fn display(&mut self) {
@@ -183,17 +234,18 @@ fn print_table(table: &HashTable<String, String>) {
 
 #[allow(unused_variables)]
 fn main() { 
-    let mut table: HashTable<String, String> = HashTable::new();
+    let mut table: HashTable<String, String> = HashTable::new_with_cap(32);
+
+
+    table.insert("USA".to_string(), "New York.".to_string());
+    table.insert("Japan".to_string(), "Tokyo.".to_string());
+    table.insert("England".to_string(), "London.".to_string());
     
-
-    table.insert("England".to_string(), "London".to_string()); 
-    table.insert("USA".to_string(), "NYC".to_string()); 
-    table.insert("JAPAN".to_string(), "Tokyo".to_string());
-    println!("----CELLS-----"); 
-    table.display_cells();
-    println!("----KEYS-----"); 
+    println!("Keys");
     table.display_keys();
-    println!("----VALUES-----"); 
-    table.display_values();
+    println!("values.");
 
+    println!("values.");
+    table.display_values();
 }
+
