@@ -21,6 +21,7 @@ typedef struct HashTable {
 size_t hash(char *key) {
 	
 	size_t hash_ = 5381;
+	
 	for(;*key != '\0';*key++)
 	{
 		hash_ = ((hash_ << 5) + hash_) + (size_t) *key;
